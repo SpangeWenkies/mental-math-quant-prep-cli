@@ -1290,6 +1290,7 @@ def run_test(
     *,
     show_type: bool,
     total_seconds: float | None = None,
+    allow_quit: bool = True,
 ) -> list[Result]:
     print()
     has_question_limit = seconds > 0
@@ -1308,9 +1309,15 @@ def run_test(
         print(f"Starting test: {len(questions)} questions, {total_text}, {question_text}.")
     all_choice = all(question.choices for question in questions)
     if all_choice:
-        print("Press 1, 2, 3, or 4 to answer. A-D also work. Press q to quit.")
+        if allow_quit:
+            print("Press 1, 2, 3, or 4 to answer. A-D also work. Press q to quit.")
+        else:
+            print("Press 1, 2, 3, or 4 to answer. A-D also work.")
     else:
-        print("Type your answer and press Enter. For choices, use 1-4. Press q to quit.")
+        if allow_quit:
+            print("Type your answer and press Enter. For choices, use 1-4. Press q to quit.")
+        else:
+            print("Type your answer and press Enter. For choices, use 1-4.")
     if has_question_limit:
         print("Press Enter to submit. If time expires, the question auto-skips.")
     elif total_seconds is not None:
@@ -1334,14 +1341,27 @@ def run_test(
         type_hint = f" [{question.category_name}]" if show_type else ""
         print(f"Q{index}/{len(questions)}{type_hint}")
         prompt = f"{render_question_block(question)}\nAnswer: "
-        quick_keys = set("1234abcdABCDqQ") if question.choices else None
-        try:
-            raw_answer, elapsed, skipped = timed_input(prompt, allowed_seconds, quick_keys)
-        except KeyboardInterrupt:
-            print("\nInterrupted. Scoring the questions answered so far.")
-            break
-        if raw_answer is not None and raw_answer.strip().lower() in {"q", "quit", "exit"}:
-            print("Quit requested. Scoring the questions answered so far.")
+        quick_keys = set("1234abcdABCD") if question.choices else None
+        if allow_quit and quick_keys is not None:
+            quick_keys.update("qQ")
+        question_start = time.perf_counter()
+        while True:
+            remaining_for_question = allowed_seconds - (time.perf_counter() - question_start)
+            if remaining_for_question <= 0:
+                raw_answer, elapsed, skipped = None, max(allowed_seconds, 0.0), True
+                break
+            try:
+                raw_answer, elapsed, skipped = timed_input(prompt, remaining_for_question, quick_keys)
+            except KeyboardInterrupt:
+                print("\nInterrupted. Scoring the questions answered so far.")
+                return results
+            if raw_answer is not None and raw_answer.strip().lower() in {"q", "quit", "exit"}:
+                if allow_quit:
+                    print("Quit requested. Scoring the questions answered so far.")
+                    return results
+                print("Quit is disabled in real mode.")
+                print()
+                continue
             break
         correct = check_answer(question, raw_answer) if not skipped else False
         if skipped:
@@ -1876,6 +1896,7 @@ def interactive_config() -> dict[str, object] | None:
             "history_mode": "ask",
             "retry_misses": False,
             "total_seconds": preset.total_seconds,
+            "allow_quit": key != "real",
             "benchmark_low_pct": preset.benchmark_low_pct,
             "benchmark_high_pct": preset.benchmark_high_pct,
             "benchmark_low_score": preset.benchmark_low_score,
@@ -1910,6 +1931,7 @@ def interactive_config() -> dict[str, object] | None:
         "history_mode": "ask",
         "retry_misses": prompt_yes_no("Redo missed/skipped questions afterward", False),
         "total_seconds": None,
+        "allow_quit": True,
         "benchmark_low_pct": None,
         "benchmark_high_pct": None,
         "benchmark_low_score": None,
@@ -1956,6 +1978,7 @@ def run_from_config(config: dict[str, object], seed: int | None = None) -> None:
         float(config["seconds"]),
         show_type=bool(config["show_type"]),
         total_seconds=float(total_seconds) if isinstance(total_seconds, (int, float)) else None,
+        allow_quit=bool(config.get("allow_quit", True)),
     )
     if not results:
         print("No questions answered.")
@@ -1998,6 +2021,7 @@ def build_config_from_args(args: argparse.Namespace) -> dict[str, object]:
         "history_mode": "never" if args.no_history else ("ask" if sys.stdin.isatty() else "always"),
         "retry_misses": args.retry_misses,
         "total_seconds": args.total_seconds if args.total_seconds is not None else preset.total_seconds,
+        "allow_quit": preset_key != "real",
         "benchmark_low_pct": preset.benchmark_low_pct,
         "benchmark_high_pct": preset.benchmark_high_pct,
         "benchmark_low_score": preset.benchmark_low_score,

@@ -34,7 +34,8 @@ python3 mental_math_cli.py --preset real
 - `80` questions in `8` minutes
 - Multiple-choice
 - No per-question timer
-- Net scoring with `+1` for correct, `-1` for wrong, `0` for unanswered
+- Sequential, non-skippable flow
+- Net scoring with `+1` for correct, `-1` for wrong, `0` only for questions left unanswered when the overall time runs out
 
 ## Notes
 
